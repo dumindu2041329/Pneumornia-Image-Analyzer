@@ -9,7 +9,7 @@ interface AnalysisHistoryProps {
   refreshTrigger?: number;
 }
 
-export function AnalysisHistory({ onViewScan, refreshTrigger }: AnalysisHistoryProps) {
+export function AnalysisHistory({ refreshTrigger }: AnalysisHistoryProps) {
   const { user } = useAuth();
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [loading, setLoading] = useState(true);

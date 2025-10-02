@@ -1,7 +1,7 @@
 import * as tf from '@tensorflow/tfjs';
 import '@tensorflow/tfjs-backend-webgl';
 
-const MODEL_VERSION = 'v1.0-tfjs';
+const MODEL_VERSION = 'v3.0-efficientnetb0';
 const IMAGE_SIZE = 224;
 
 export class PneumoniaDetectionService {
@@ -15,7 +15,7 @@ export class PneumoniaDetectionService {
       await tf.ready();
       await tf.setBackend('webgl');
 
-      this.model = await this.createModel();
+      this.model = await this.createEfficientNetB0Model();
       this.isInitialized = true;
     } catch (error) {
       console.error('Error initializing detection service:', error);
@@ -23,38 +23,149 @@ export class PneumoniaDetectionService {
     }
   }
 
-  private async createModel(): Promise<tf.LayersModel> {
-    const model = tf.sequential({
-      layers: [
-        tf.layers.conv2d({
-          inputShape: [IMAGE_SIZE, IMAGE_SIZE, 3],
-          filters: 32,
-          kernelSize: 3,
-          activation: 'relu',
-        }),
-        tf.layers.maxPooling2d({ poolSize: 2 }),
-        tf.layers.conv2d({
-          filters: 64,
-          kernelSize: 3,
-          activation: 'relu',
-        }),
-        tf.layers.maxPooling2d({ poolSize: 2 }),
-        tf.layers.conv2d({
-          filters: 128,
-          kernelSize: 3,
-          activation: 'relu',
-        }),
-        tf.layers.maxPooling2d({ poolSize: 2 }),
-        tf.layers.flatten(),
-        tf.layers.dropout({ rate: 0.5 }),
-        tf.layers.dense({ units: 128, activation: 'relu' }),
-        tf.layers.dropout({ rate: 0.3 }),
-        tf.layers.dense({ units: 2, activation: 'softmax' }),
-      ],
+  private swish(x: tf.SymbolicTensor): tf.SymbolicTensor {
+    return tf.layers.multiply().apply([
+      x,
+      tf.layers.activation({ activation: 'sigmoid' }).apply(x) as tf.SymbolicTensor
+    ]) as tf.SymbolicTensor;
+  }
+
+  private mbConvBlock(
+    x: tf.SymbolicTensor,
+    filters: number,
+    kernelSize: number,
+    strides: number,
+    expandRatio: number,
+    seRatio: number,
+    blockId: number
+  ): tf.SymbolicTensor {
+    const inputFilters = x.shape[x.shape.length - 1] as number;
+    const expandedFilters = inputFilters * expandRatio;
+
+    let y = x;
+
+    if (expandRatio !== 1) {
+      y = tf.layers.conv2d({
+        filters: expandedFilters,
+        kernelSize: 1,
+        padding: 'same',
+        use_bias: false,
+        name: `block${blockId}_expand_conv`
+      }).apply(y) as tf.SymbolicTensor;
+
+      y = tf.layers.batchNormalization({ name: `block${blockId}_expand_bn` }).apply(y) as tf.SymbolicTensor;
+      y = this.swish(y);
+    }
+
+    y = tf.layers.depthwiseConv2d({
+      kernelSize: kernelSize,
+      strides: strides,
+      padding: 'same',
+      use_bias: false,
+      name: `block${blockId}_dwconv`
+    }).apply(y) as tf.SymbolicTensor;
+
+    y = tf.layers.batchNormalization({ name: `block${blockId}_bn` }).apply(y) as tf.SymbolicTensor;
+    y = this.swish(y);
+
+    if (seRatio > 0 && seRatio <= 1) {
+      const seFilters = Math.max(1, Math.floor(inputFilters * seRatio));
+      let se = tf.layers.globalAveragePooling2d({ name: `block${blockId}_se_squeeze` }).apply(y) as tf.SymbolicTensor;
+      se = tf.layers.reshape({ targetShape: [1, 1, expandedFilters] }).apply(se) as tf.SymbolicTensor;
+      se = tf.layers.conv2d({
+        filters: seFilters,
+        kernelSize: 1,
+        activation: 'relu',
+        name: `block${blockId}_se_reduce`
+      }).apply(se) as tf.SymbolicTensor;
+      se = tf.layers.conv2d({
+        filters: expandedFilters,
+        kernelSize: 1,
+        activation: 'sigmoid',
+        name: `block${blockId}_se_expand`
+      }).apply(se) as tf.SymbolicTensor;
+      y = tf.layers.multiply({ name: `block${blockId}_se_excite` }).apply([y, se]) as tf.SymbolicTensor;
+    }
+
+    y = tf.layers.conv2d({
+      filters: filters,
+      kernelSize: 1,
+      padding: 'same',
+      use_bias: false,
+      name: `block${blockId}_project_conv`
+    }).apply(y) as tf.SymbolicTensor;
+
+    y = tf.layers.batchNormalization({ name: `block${blockId}_project_bn` }).apply(y) as tf.SymbolicTensor;
+
+    if (strides === 1 && inputFilters === filters) {
+      y = tf.layers.add({ name: `block${blockId}_add` }).apply([x, y]) as tf.SymbolicTensor;
+    }
+
+    return y;
+  }
+
+  private async createEfficientNetB0Model(): Promise<tf.LayersModel> {
+    const input = tf.input({ shape: [IMAGE_SIZE, IMAGE_SIZE, 3] });
+
+    let x = tf.layers.rescaling({ scale: 1.0 / 255.0 }).apply(input) as tf.SymbolicTensor;
+
+    x = tf.layers.conv2d({
+      filters: 32,
+      kernelSize: 3,
+      strides: 2,
+      padding: 'same',
+      use_bias: false,
+      name: 'stem_conv'
+    }).apply(x) as tf.SymbolicTensor;
+
+    x = tf.layers.batchNormalization({ name: 'stem_bn' }).apply(x) as tf.SymbolicTensor;
+    x = this.swish(x);
+
+    x = this.mbConvBlock(x, 16, 3, 1, 1, 0.25, 1);
+    x = this.mbConvBlock(x, 24, 3, 2, 6, 0.25, 2);
+    x = this.mbConvBlock(x, 24, 3, 1, 6, 0.25, 3);
+    x = this.mbConvBlock(x, 40, 5, 2, 6, 0.25, 4);
+    x = this.mbConvBlock(x, 40, 5, 1, 6, 0.25, 5);
+    x = this.mbConvBlock(x, 80, 3, 2, 6, 0.25, 6);
+    x = this.mbConvBlock(x, 80, 3, 1, 6, 0.25, 7);
+    x = this.mbConvBlock(x, 80, 3, 1, 6, 0.25, 8);
+    x = this.mbConvBlock(x, 112, 5, 1, 6, 0.25, 9);
+    x = this.mbConvBlock(x, 112, 5, 1, 6, 0.25, 10);
+    x = this.mbConvBlock(x, 112, 5, 1, 6, 0.25, 11);
+    x = this.mbConvBlock(x, 192, 5, 2, 6, 0.25, 12);
+    x = this.mbConvBlock(x, 192, 5, 1, 6, 0.25, 13);
+    x = this.mbConvBlock(x, 192, 5, 1, 6, 0.25, 14);
+    x = this.mbConvBlock(x, 192, 5, 1, 6, 0.25, 15);
+    x = this.mbConvBlock(x, 320, 3, 1, 6, 0.25, 16);
+
+    x = tf.layers.conv2d({
+      filters: 1280,
+      kernelSize: 1,
+      padding: 'same',
+      use_bias: false,
+      name: 'top_conv'
+    }).apply(x) as tf.SymbolicTensor;
+
+    x = tf.layers.batchNormalization({ name: 'top_bn' }).apply(x) as tf.SymbolicTensor;
+    x = this.swish(x);
+
+    x = tf.layers.globalAveragePooling2d({ name: 'avg_pool' }).apply(x) as tf.SymbolicTensor;
+    x = tf.layers.dropout({ rate: 0.2, name: 'top_dropout' }).apply(x) as tf.SymbolicTensor;
+
+    const output = tf.layers.dense({
+      units: 2,
+      activation: 'softmax',
+      name: 'predictions'
+    }).apply(x) as tf.SymbolicTensor;
+
+    const model = tf.model({
+      inputs: input,
+      outputs: output,
+      name: 'efficientnetb0'
     });
 
     model.compile({
-      optimizer: tf.train.adam(0.001),
+      optimizer: tf.train.adam(0.0001),
       loss: 'categoricalCrossentropy',
       metrics: ['accuracy'],
     });
@@ -113,7 +224,6 @@ export class PneumoniaDetectionService {
               .fromPixels(img)
               .resizeNearestNeighbor([IMAGE_SIZE, IMAGE_SIZE])
               .toFloat()
-              .div(255.0)
               .expandDims(0) as tf.Tensor4D;
 
             resolve(tensor);
