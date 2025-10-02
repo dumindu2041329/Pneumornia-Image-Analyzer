@@ -41,7 +41,7 @@ export class PneumoniaDetectionService {
     model.add(tf.layers.dense({
       units: 256,
       activation: 'relu',
-      inputShape: [1024], // MobileNet v2 outputs 1024 features
+      inputShape: [1000], // MobileNet v2 infer() outputs 1000 features
     }));
 
     model.add(tf.layers.dropout({ rate: 0.5 }));
