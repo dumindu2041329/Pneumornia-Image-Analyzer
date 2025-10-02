@@ -18,7 +18,7 @@
   ### 2. xray_analyses
   Stores X-ray image analysis results
   - `id` (uuid, primary key) - Unique analysis identifier
-  - `user_id` (uuid, foreign key) - References profiles.id
+  - `user_id` (uuid, foreign key) - References auth.users.id
   - `image_url` (text) - URL to stored X-ray image
   - `file_name` (text) - Original filename
   - `file_size` (integer) - File size in bytes
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS profiles (
 -- Create xray_analyses table
 CREATE TABLE IF NOT EXISTS xray_analyses (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   image_url text NOT NULL,
   file_name text NOT NULL,
   file_size integer NOT NULL DEFAULT 0,

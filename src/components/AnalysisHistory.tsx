@@ -80,7 +80,7 @@ export function AnalysisHistory({ refreshTrigger }: AnalysisHistoryProps) {
 
   if (loading) {
     return (
-      <div className="bg-white rounded-xl shadow-lg p-8">
+      <div className="glass-card p-8">
         <div className="flex items-center justify-center">
           <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
         </div>
@@ -90,15 +90,15 @@ export function AnalysisHistory({ refreshTrigger }: AnalysisHistoryProps) {
 
   if (error) {
     return (
-      <div className="bg-white rounded-xl shadow-lg p-6">
-        <p className="text-red-600 text-center">{error}</p>
+      <div className="glass-card p-6">
+        <p className="text-red-600 dark:text-red-400 text-center">{error}</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-      <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4">
+    <div className="glass-card overflow-hidden">
+      <div className="bg-gradient-to-r from-blue-600 to-cyan-600 px-6 py-4">
         <div className="flex items-center gap-3">
           <History className="w-6 h-6 text-white" />
           <h2 className="text-xl font-bold text-white">Analysis History</h2>
@@ -108,9 +108,9 @@ export function AnalysisHistory({ refreshTrigger }: AnalysisHistoryProps) {
       <div className="p-6">
         {history.length === 0 ? (
           <div className="text-center py-12">
-            <History className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-600 mb-2">No analysis history yet</p>
-            <p className="text-sm text-gray-500">
+            <History className="w-16 h-16 text-gray-300 dark:text-slate-600 mx-auto mb-4" />
+            <p className="text-gray-600 dark:text-slate-400 mb-2">No analysis history yet</p>
+            <p className="text-sm text-gray-500 dark:text-slate-500">
               Upload and analyze your first X-ray to get started
             </p>
           </div>
@@ -119,12 +119,12 @@ export function AnalysisHistory({ refreshTrigger }: AnalysisHistoryProps) {
             {history.map((record) => (
               <div
                 key={record.id}
-                className="border border-gray-200 rounded-lg p-4 hover:border-blue-300 transition"
+                className="border border-gray-200 dark:border-slate-700 rounded-lg p-4 hover:border-blue-300 dark:hover:border-blue-500 transition bg-white/50 dark:bg-slate-800/50"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-2">
-                      <h3 className="font-semibold text-gray-900 truncate">
+                      <h3 className="font-semibold text-gray-900 dark:text-white truncate">
                         {record.fileName}
                       </h3>
                       <div className={`
@@ -138,7 +138,7 @@ export function AnalysisHistory({ refreshTrigger }: AnalysisHistoryProps) {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-4 text-sm text-gray-600">
+                    <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-slate-400">
                       <div className="flex items-center gap-1">
                         <Calendar className="w-4 h-4" />
                         <span>{formatDate(record.createdAt)}</span>
@@ -153,11 +153,11 @@ export function AnalysisHistory({ refreshTrigger }: AnalysisHistoryProps) {
                     <button
                       onClick={() => handleDelete(record.id)}
                       disabled={deletingId === record.id}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded transition disabled:opacity-50"
+                      className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition disabled:opacity-50"
                       aria-label="Delete analysis"
                     >
                       {deletingId === record.id ? (
-                        <div className="w-5 h-5 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+                        <div className="w-5 h-5 border-2 border-red-600 dark:border-red-400 border-t-transparent rounded-full animate-spin" />
                       ) : (
                         <Trash2 className="w-5 h-5" />
                       )}

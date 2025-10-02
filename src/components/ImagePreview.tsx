@@ -46,13 +46,13 @@ export function ImagePreview({ file, imageUrl }: ImagePreviewProps) {
 
   return (
     <>
-      <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-        <div className="bg-gray-800 px-4 py-3 flex items-center justify-between">
+      <div className="glass-card overflow-hidden">
+        <div className="bg-gray-800 dark:bg-slate-900 px-4 py-3 flex items-center justify-between">
           <h3 className="text-white font-semibold">X-Ray Preview</h3>
           <div className="flex items-center gap-2">
             <button
               onClick={handleZoomOut}
-              className="p-2 text-white hover:bg-gray-700 rounded transition"
+              className="p-2 text-white hover:bg-gray-700 dark:hover:bg-slate-800 rounded transition"
               disabled={zoom <= 0.5}
               aria-label="Zoom out"
             >
@@ -60,13 +60,13 @@ export function ImagePreview({ file, imageUrl }: ImagePreviewProps) {
             </button>
             <button
               onClick={handleReset}
-              className="px-3 py-2 text-white hover:bg-gray-700 rounded transition text-sm"
+              className="px-3 py-2 text-white hover:bg-gray-700 dark:hover:bg-slate-800 rounded transition text-sm"
             >
               {Math.round(zoom * 100)}%
             </button>
             <button
               onClick={handleZoomIn}
-              className="p-2 text-white hover:bg-gray-700 rounded transition"
+              className="p-2 text-white hover:bg-gray-700 dark:hover:bg-slate-800 rounded transition"
               disabled={zoom >= 3}
               aria-label="Zoom in"
             >
@@ -74,7 +74,7 @@ export function ImagePreview({ file, imageUrl }: ImagePreviewProps) {
             </button>
             <button
               onClick={() => setIsFullscreen(true)}
-              className="p-2 text-white hover:bg-gray-700 rounded transition"
+              className="p-2 text-white hover:bg-gray-700 dark:hover:bg-slate-800 rounded transition"
               aria-label="Fullscreen"
             >
               <Maximize2 className="w-5 h-5" />
@@ -82,7 +82,7 @@ export function ImagePreview({ file, imageUrl }: ImagePreviewProps) {
           </div>
         </div>
 
-        <div className="bg-gray-900 p-4 flex items-center justify-center overflow-auto max-h-[500px]">
+        <div className="bg-gray-900 dark:bg-black p-4 flex items-center justify-center overflow-auto max-h-[500px]">
           <img
             src={preview}
             alt="Chest X-Ray"
