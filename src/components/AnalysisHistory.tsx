@@ -1,21 +1,8 @@
 import { useState, useEffect } from 'react';
-import { History, Calendar, AlertTriangle, CheckCircle, HelpCircle, Trash2, Eye } from 'lucide-react';
+import { History, Calendar, AlertTriangle, CheckCircle, Trash2 } from 'lucide-react';
 import { storageService } from '../services/storageService';
 import { useAuth } from '../contexts/AuthContext';
-import type { DetectionStatus } from '../types';
-
-interface HistoryRecord {
-  id: string;
-  file_name: string;
-  upload_date: string;
-  image_url: string;
-  image_storage_path: string;
-  detection_result?: {
-    detection_status: DetectionStatus;
-    confidence_score: number;
-    analysis_date: string;
-  };
-}
+import type { AnalysisResult } from '../types';
 
 interface AnalysisHistoryProps {
   onViewScan?: (imageUrl: string, result: any) => void;
@@ -36,7 +23,7 @@ export function AnalysisHistory({ onViewScan, refreshTrigger }: AnalysisHistoryP
       setLoading(true);
       setError(null);
       const data = await storageService.getAnalysisHistory(user.id);
-      setHistory(data as HistoryRecord[]);
+      setHistory(data as unknown as HistoryRecord[]);
     } catch (err) {
       setError('Failed to load analysis history');
       console.error(err);
@@ -45,45 +32,39 @@ export function AnalysisHistory({ onViewScan, refreshTrigger }: AnalysisHistoryP
     }
   };
 
+  type HistoryRecord = AnalysisResult;
+
   useEffect(() => {
     fetchHistory();
   }, [user, refreshTrigger]);
 
-  const handleDelete = async (scanId: string, storagePath: string) => {
-    if (!user || !confirm('Are you sure you want to delete this scan?')) return;
+  const handleDelete = async (analysisId: string) => {
+    if (!user || !confirm('Are you sure you want to delete this analysis?')) return;
 
     try {
-      setDeletingId(scanId);
-      await storageService.deleteScan(scanId, user.id, storagePath);
-      setHistory(prev => prev.filter(item => item.id !== scanId));
+      setDeletingId(analysisId);
+      await storageService.deleteAnalysis(analysisId);
+      setHistory(prev => prev.filter(item => item.id !== analysisId));
     } catch (err) {
-      alert('Failed to delete scan');
+      alert('Failed to delete analysis');
       console.error(err);
     } finally {
       setDeletingId(null);
     }
   };
 
-  const getStatusIcon = (status: DetectionStatus) => {
-    switch (status) {
-      case 'positive':
-        return <AlertTriangle className="w-5 h-5 text-red-600" />;
-      case 'negative':
-        return <CheckCircle className="w-5 h-5 text-green-600" />;
-      case 'inconclusive':
-        return <HelpCircle className="w-5 h-5 text-yellow-600" />;
+  const getStatusIcon = (prediction: 'normal' | 'pneumonia') => {
+    if (prediction === 'pneumonia') {
+      return <AlertTriangle className="w-5 h-5 text-red-600" />;
     }
+    return <CheckCircle className="w-5 h-5 text-green-600" />;
   };
 
-  const getStatusColor = (status: DetectionStatus) => {
-    switch (status) {
-      case 'positive':
-        return 'bg-red-100 text-red-800 border-red-200';
-      case 'negative':
-        return 'bg-green-100 text-green-800 border-green-200';
-      case 'inconclusive':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+  const getStatusColor = (prediction: 'normal' | 'pneumonia') => {
+    if (prediction === 'pneumonia') {
+      return 'bg-red-100 text-red-800 border-red-200';
     }
+    return 'bg-green-100 text-green-800 border-green-200';
   };
 
   const formatDate = (dateString: string) => {
@@ -144,49 +125,36 @@ export function AnalysisHistory({ onViewScan, refreshTrigger }: AnalysisHistoryP
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-2">
                       <h3 className="font-semibold text-gray-900 truncate">
-                        {record.file_name}
+                        {record.fileName}
                       </h3>
-                      {record.detection_result && (
-                        <div className={`
-                          flex items-center gap-1 px-2 py-1 rounded border text-xs font-medium
-                          ${getStatusColor(record.detection_result.detection_status)}
-                        `}>
-                          {getStatusIcon(record.detection_result.detection_status)}
-                          <span className="capitalize">
-                            {record.detection_result.detection_status}
-                          </span>
-                        </div>
-                      )}
+                      <div className={`
+                        flex items-center gap-1 px-2 py-1 rounded border text-xs font-medium
+                        ${getStatusColor(record.prediction)}
+                      `}>
+                        {getStatusIcon(record.prediction)}
+                        <span className="capitalize">
+                          {record.prediction}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-4 text-sm text-gray-600">
                       <div className="flex items-center gap-1">
                         <Calendar className="w-4 h-4" />
-                        <span>{formatDate(record.upload_date)}</span>
+                        <span>{formatDate(record.createdAt)}</span>
                       </div>
-                      {record.detection_result && (
-                        <span className="font-medium">
-                          {record.detection_result.confidence_score.toFixed(1)}% confidence
-                        </span>
-                      )}
+                      <span className="font-medium">
+                        {(record.confidence * 100).toFixed(1)}% confidence
+                      </span>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {onViewScan && record.detection_result && (
-                      <button
-                        onClick={() => onViewScan(record.image_url, record.detection_result)}
-                        className="p-2 text-blue-600 hover:bg-blue-50 rounded transition"
-                        aria-label="View scan"
-                      >
-                        <Eye className="w-5 h-5" />
-                      </button>
-                    )}
                     <button
-                      onClick={() => handleDelete(record.id, record.image_storage_path)}
+                      onClick={() => handleDelete(record.id)}
                       disabled={deletingId === record.id}
                       className="p-2 text-red-600 hover:bg-red-50 rounded transition disabled:opacity-50"
-                      aria-label="Delete scan"
+                      aria-label="Delete analysis"
                     >
                       {deletingId === record.id ? (
                         <div className="w-5 h-5 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />

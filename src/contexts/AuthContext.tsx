@@ -38,16 +38,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signUp = async (email: string, password: string, fullName: string) => {
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: {
-        data: {
-          full_name: fullName,
-        },
-      },
     });
-    return { error };
+
+    if (error) return { error };
+
+    if (data.user) {
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert({
+          id: data.user.id,
+          email: data.user.email!,
+          full_name: fullName,
+        });
+
+      if (profileError) return { error: profileError as unknown as AuthError };
+    }
+
+    return { error: null };
   };
 
   const signIn = async (email: string, password: string) => {

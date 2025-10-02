@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Activity, RotateCcw, LogOut } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Activity, RotateCcw, LogOut, AlertCircle } from 'lucide-react';
 import { FileUpload } from './FileUpload';
 import { ImagePreview } from './ImagePreview';
 import { LoadingAnalysis } from './LoadingAnalysis';
@@ -8,17 +8,30 @@ import { AnalysisHistory } from './AnalysisHistory';
 import { detectionService } from '../services/detectionService';
 import { storageService } from '../services/storageService';
 import { useAuth } from '../contexts/AuthContext';
-import type { DetectionResponse } from '../types';
+import type { AnalysisResult } from '../types';
 
-type AnalysisState = 'idle' | 'analyzing' | 'complete' | 'error';
+type AnalysisState = 'initializing' | 'idle' | 'analyzing' | 'complete' | 'error';
 
 export function PneumoniaDetector() {
   const { user, signOut } = useAuth();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [analysisState, setAnalysisState] = useState<AnalysisState>('idle');
-  const [results, setResults] = useState<DetectionResponse | null>(null);
+  const [analysisState, setAnalysisState] = useState<AnalysisState>('initializing');
+  const [results, setResults] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [historyRefresh, setHistoryRefresh] = useState(0);
+
+  useEffect(() => {
+    const initModel = async () => {
+      try {
+        await detectionService.initialize();
+        setAnalysisState('idle');
+      } catch (err) {
+        setError('Failed to initialize AI model. Please refresh the page.');
+        setAnalysisState('error');
+      }
+    };
+    initModel();
+  }, []);
 
   const handleFileSelect = (file: File) => {
     setSelectedFile(file);
@@ -41,29 +54,22 @@ export function PneumoniaDetector() {
     setError(null);
 
     try {
-      const detectionResult = await detectionService.analyzeXRay(selectedFile);
+      const detectionResult = await detectionService.analyzeImage(selectedFile);
 
-      const { url, path } = await storageService.uploadXRay(selectedFile, user.id);
+      const imageUrl = await storageService.uploadImage(selectedFile, user.id);
 
-      const scanRecord = await storageService.saveScanRecord({
-        userId: user.id,
-        imageUrl: url,
-        imagePath: path,
-        fileName: selectedFile.name,
-        fileSize: selectedFile.size,
-      });
+      const analysisResult = await storageService.saveAnalysis(
+        user.id,
+        imageUrl,
+        selectedFile.name,
+        selectedFile.size,
+        detectionResult.prediction,
+        detectionResult.confidence,
+        detectionResult.processingTime,
+        detectionService.getModelVersion()
+      );
 
-      await storageService.saveDetectionResult({
-        scanId: scanRecord.id,
-        userId: user.id,
-        detectionStatus: detectionResult.status,
-        confidenceScore: detectionResult.confidence,
-        modelVersion: detectionResult.modelVersion,
-        processingTimeMs: detectionResult.processingTime,
-        notes: detectionResult.notes,
-      });
-
-      setResults(detectionResult);
+      setResults(analysisResult);
       setAnalysisState('complete');
       setHistoryRefresh(prev => prev + 1);
     } catch (err) {
@@ -80,6 +86,17 @@ export function PneumoniaDetector() {
   const handleSignOut = async () => {
     await signOut();
   };
+
+  if (analysisState === 'initializing') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">Initializing AI model...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
@@ -140,7 +157,7 @@ export function PneumoniaDetector() {
                   className="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition flex items-center justify-center gap-2"
                 >
                   <Activity className="w-5 h-5" />
-                  Analyze X-Ray
+                  Analyze with AI
                 </button>
               )}
 
@@ -177,11 +194,10 @@ export function PneumoniaDetector() {
 
             {analysisState === 'complete' && results && (
               <ResultsDisplay
-                status={results.status}
+                prediction={results.prediction}
                 confidence={results.confidence}
-                processingTime={results.processingTime}
-                modelVersion={results.modelVersion}
-                notes={results.notes}
+                processingTime={results.processingTime || 0}
+                fileName={results.fileName}
               />
             )}
 

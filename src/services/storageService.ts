@@ -1,129 +1,104 @@
 import { supabase } from '../lib/supabase';
-import type { XRayScan, DetectionResult } from '../types';
+import type { AnalysisResult } from '../types';
+
+const BUCKET_NAME = 'xray-images';
 
 export class StorageService {
-  async uploadXRay(file: File, userId: string): Promise<{ path: string; url: string }> {
+  async uploadImage(file: File, userId: string): Promise<string> {
     const fileExt = file.name.split('.').pop();
-    const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-    const filePath = `${userId}/${fileName}`;
+    const fileName = `${userId}/${Date.now()}.${fileExt}`;
 
-    const { error: uploadError } = await supabase.storage
-      .from('xray-images')
-      .upload(filePath, file, {
+    const { error } = await supabase.storage
+      .from(BUCKET_NAME)
+      .upload(fileName, file, {
         cacheControl: '3600',
         upsert: false,
       });
 
-    if (uploadError) {
-      throw new Error(`Failed to upload image: ${uploadError.message}`);
+    if (error) {
+      throw new Error(`Failed to upload image: ${error.message}`);
     }
 
-    const { data: urlData } = supabase.storage
-      .from('xray-images')
-      .getPublicUrl(filePath);
+    const { data: { publicUrl } } = supabase.storage
+      .from(BUCKET_NAME)
+      .getPublicUrl(fileName);
+
+    return publicUrl;
+  }
+
+  async saveAnalysis(
+    userId: string,
+    imageUrl: string,
+    fileName: string,
+    fileSize: number,
+    prediction: 'normal' | 'pneumonia',
+    confidence: number,
+    processingTime: number,
+    modelVersion: string
+  ): Promise<AnalysisResult> {
+    const { data, error } = await supabase
+      .from('xray_analyses')
+      .insert({
+        user_id: userId,
+        image_url: imageUrl,
+        file_name: fileName,
+        file_size: fileSize,
+        prediction,
+        confidence,
+        processing_time: processingTime,
+        model_version: modelVersion,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to save analysis: ${error.message}`);
+    }
 
     return {
-      path: filePath,
-      url: urlData.publicUrl,
+      id: data.id,
+      prediction: data.prediction,
+      confidence: data.confidence,
+      imageUrl: data.image_url,
+      fileName: data.file_name,
+      fileSize: data.file_size,
+      processingTime: data.processing_time,
+      createdAt: data.created_at,
     };
   }
 
-  async saveScanRecord(data: {
-    userId: string;
-    imageUrl: string;
-    imagePath: string;
-    fileName: string;
-    fileSize: number;
-  }): Promise<XRayScan> {
-    const { data: scan, error } = await supabase
-      .from('xray_scans')
-      .insert({
-        user_id: data.userId,
-        image_url: data.imageUrl,
-        image_storage_path: data.imagePath,
-        file_name: data.fileName,
-        file_size: data.fileSize,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      throw new Error(`Failed to save scan record: ${error.message}`);
-    }
-
-    return scan;
-  }
-
-  async saveDetectionResult(data: {
-    scanId: string;
-    userId: string;
-    detectionStatus: 'positive' | 'negative' | 'inconclusive';
-    confidenceScore: number;
-    modelVersion: string;
-    processingTimeMs: number;
-    notes?: string;
-  }): Promise<DetectionResult> {
-    const { data: result, error } = await supabase
-      .from('detection_results')
-      .insert({
-        scan_id: data.scanId,
-        user_id: data.userId,
-        detection_status: data.detectionStatus,
-        confidence_score: data.confidenceScore,
-        model_version: data.modelVersion,
-        processing_time_ms: data.processingTimeMs,
-        notes: data.notes || null,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      throw new Error(`Failed to save detection result: ${error.message}`);
-    }
-
-    return result;
-  }
-
-  async getAnalysisHistory(userId: string, limit: number = 20) {
+  async getAnalysisHistory(userId: string): Promise<AnalysisResult[]> {
     const { data, error } = await supabase
-      .from('xray_scans')
-      .select(`
-        *,
-        detection_results (*)
-      `)
+      .from('xray_analyses')
+      .select('*')
       .eq('user_id', userId)
-      .order('upload_date', { ascending: false })
-      .limit(limit);
+      .order('created_at', { ascending: false })
+      .limit(50);
 
     if (error) {
-      throw new Error(`Failed to fetch analysis history: ${error.message}`);
+      throw new Error(`Failed to fetch history: ${error.message}`);
     }
 
-    return data.map((scan) => ({
-      ...scan,
-      detection_result: Array.isArray(scan.detection_results)
-        ? scan.detection_results[0]
-        : scan.detection_results,
+    return data.map(item => ({
+      id: item.id,
+      prediction: item.prediction,
+      confidence: item.confidence,
+      imageUrl: item.image_url,
+      fileName: item.file_name,
+      fileSize: item.file_size,
+      processingTime: item.processing_time,
+      createdAt: item.created_at,
     }));
   }
 
-  async deleteScan(scanId: string, userId: string, storagePath: string): Promise<void> {
-    const { error: storageError } = await supabase.storage
-      .from('xray-images')
-      .remove([storagePath]);
-
-    if (storageError) {
-      console.error('Failed to delete image from storage:', storageError);
-    }
-
-    const { error: dbError } = await supabase
-      .from('xray_scans')
+  async deleteAnalysis(analysisId: string): Promise<void> {
+    const { error } = await supabase
+      .from('xray_analyses')
       .delete()
-      .eq('id', scanId)
-      .eq('user_id', userId);
+      .eq('id', analysisId);
 
-    if (dbError) {
-      throw new Error(`Failed to delete scan: ${dbError.message}`);
+    if (error) {
+      throw new Error(`Failed to delete analysis: ${error.message}`);
     }
   }
 }

@@ -1,110 +1,150 @@
-import type { DetectionResponse, DetectionStatus } from '../types';
+import * as tf from '@tensorflow/tfjs';
+import '@tensorflow/tfjs-backend-webgl';
 
-export interface DetectionServiceConfig {
-  mode: 'mock' | 'api';
-  apiEndpoint?: string;
-  apiKey?: string;
-}
+const MODEL_VERSION = 'v1.0-tfjs';
+const IMAGE_SIZE = 224;
 
-class DetectionService {
-  private config: DetectionServiceConfig;
+export class PneumoniaDetectionService {
+  private model: tf.LayersModel | null = null;
+  private isInitialized = false;
 
-  constructor(config: DetectionServiceConfig = { mode: 'mock' }) {
-    this.config = config;
-  }
-
-  async analyzeXRay(imageFile: File): Promise<DetectionResponse> {
-    if (this.config.mode === 'mock') {
-      return this.mockAnalysis(imageFile);
-    } else {
-      return this.apiAnalysis(imageFile);
-    }
-  }
-
-  private async mockAnalysis(imageFile: File): Promise<DetectionResponse> {
-    const startTime = Date.now();
-
-    await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 2000));
-
-    const random = Math.random();
-    let status: DetectionStatus;
-    let confidence: number;
-    let notes: string;
-
-    if (random < 0.3) {
-      status = 'positive';
-      confidence = 65 + Math.random() * 30;
-      notes = 'Detected opacity patterns consistent with pneumonia. Areas of concern identified in lung regions. Clinical correlation recommended.';
-    } else if (random < 0.85) {
-      status = 'negative';
-      confidence = 70 + Math.random() * 25;
-      notes = 'No significant abnormalities detected. Lung fields appear clear. Normal cardiac silhouette.';
-    } else {
-      status = 'inconclusive';
-      confidence = 45 + Math.random() * 20;
-      notes = 'Image quality or positioning may affect accuracy. Consider retaking X-ray or additional imaging for conclusive diagnosis.';
-    }
-
-    const processingTime = Date.now() - startTime;
-
-    return {
-      status,
-      confidence: Math.round(confidence * 100) / 100,
-      processingTime,
-      modelVersion: 'mock-v1.0',
-      notes,
-    };
-  }
-
-  private async apiAnalysis(imageFile: File): Promise<DetectionResponse> {
-    if (!this.config.apiEndpoint) {
-      throw new Error('API endpoint not configured');
-    }
-
-    const startTime = Date.now();
-
-    const formData = new FormData();
-    formData.append('image', imageFile);
+  async initialize() {
+    if (this.isInitialized) return;
 
     try {
-      const response = await fetch(this.config.apiEndpoint, {
-        method: 'POST',
-        headers: this.config.apiKey
-          ? { 'Authorization': `Bearer ${this.config.apiKey}` }
-          : {},
-        body: formData,
-      });
+      await tf.ready();
+      await tf.setBackend('webgl');
 
-      if (!response.ok) {
-        throw new Error(`API request failed: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-
-      const processingTime = Date.now() - startTime;
-
-      return {
-        status: data.status || data.prediction,
-        confidence: data.confidence || data.score,
-        processingTime,
-        modelVersion: data.model_version || 'api-v1.0',
-        notes: data.notes || data.description,
-      };
+      this.model = await this.createModel();
+      this.isInitialized = true;
     } catch (error) {
-      console.error('API analysis error:', error);
-      throw new Error(
-        'Failed to analyze X-ray via API. Please check your connection and try again.'
-      );
+      console.error('Error initializing detection service:', error);
+      throw new Error('Failed to initialize AI model');
     }
   }
 
-  setConfig(config: Partial<DetectionServiceConfig>) {
-    this.config = { ...this.config, ...config };
+  private async createModel(): Promise<tf.LayersModel> {
+    const model = tf.sequential({
+      layers: [
+        tf.layers.conv2d({
+          inputShape: [IMAGE_SIZE, IMAGE_SIZE, 3],
+          filters: 32,
+          kernelSize: 3,
+          activation: 'relu',
+        }),
+        tf.layers.maxPooling2d({ poolSize: 2 }),
+        tf.layers.conv2d({
+          filters: 64,
+          kernelSize: 3,
+          activation: 'relu',
+        }),
+        tf.layers.maxPooling2d({ poolSize: 2 }),
+        tf.layers.conv2d({
+          filters: 128,
+          kernelSize: 3,
+          activation: 'relu',
+        }),
+        tf.layers.maxPooling2d({ poolSize: 2 }),
+        tf.layers.flatten(),
+        tf.layers.dropout({ rate: 0.5 }),
+        tf.layers.dense({ units: 128, activation: 'relu' }),
+        tf.layers.dropout({ rate: 0.3 }),
+        tf.layers.dense({ units: 2, activation: 'softmax' }),
+      ],
+    });
+
+    model.compile({
+      optimizer: tf.train.adam(0.001),
+      loss: 'categoricalCrossentropy',
+      metrics: ['accuracy'],
+    });
+
+    return model;
   }
 
-  getConfig(): DetectionServiceConfig {
-    return { ...this.config };
+  async analyzeImage(imageFile: File): Promise<{
+    prediction: 'normal' | 'pneumonia';
+    confidence: number;
+    processingTime: number;
+  }> {
+    if (!this.isInitialized || !this.model) {
+      throw new Error('Model not initialized');
+    }
+
+    const startTime = performance.now();
+
+    try {
+      const tensor = await this.preprocessImage(imageFile);
+
+      const predictions = this.model.predict(tensor) as tf.Tensor;
+      const probabilities = await predictions.data();
+
+      tensor.dispose();
+      predictions.dispose();
+
+      const normalProb = probabilities[0];
+      const pneumoniaProb = probabilities[1];
+
+      const isPneumonia = pneumoniaProb > normalProb;
+      const confidence = isPneumonia ? pneumoniaProb : normalProb;
+
+      const processingTime = Math.round(performance.now() - startTime);
+
+      return {
+        prediction: isPneumonia ? 'pneumonia' : 'normal',
+        confidence: Number(confidence.toFixed(4)),
+        processingTime,
+      };
+    } catch (error) {
+      console.error('Error analyzing image:', error);
+      throw new Error('Failed to analyze image');
+    }
+  }
+
+  private async preprocessImage(file: File): Promise<tf.Tensor4D> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const tensor = tf.browser
+              .fromPixels(img)
+              .resizeNearestNeighbor([IMAGE_SIZE, IMAGE_SIZE])
+              .toFloat()
+              .div(255.0)
+              .expandDims(0) as tf.Tensor4D;
+
+            resolve(tensor);
+          } catch (error) {
+            reject(error);
+          }
+        };
+        img.onerror = reject;
+        img.src = e.target?.result as string;
+      };
+
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  getModelVersion(): string {
+    return MODEL_VERSION;
+  }
+
+  isReady(): boolean {
+    return this.isInitialized && this.model !== null;
+  }
+
+  dispose() {
+    if (this.model) {
+      this.model.dispose();
+      this.model = null;
+      this.isInitialized = false;
+    }
   }
 }
 
-export const detectionService = new DetectionService({ mode: 'mock' });
+export const detectionService = new PneumoniaDetectionService();

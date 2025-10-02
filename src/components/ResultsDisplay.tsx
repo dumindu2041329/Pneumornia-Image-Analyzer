@@ -1,56 +1,39 @@
-import { CheckCircle, AlertTriangle, HelpCircle, Clock, Cpu } from 'lucide-react';
-import type { DetectionStatus } from '../types';
+import { CheckCircle, AlertTriangle, Clock, FileText } from 'lucide-react';
 
 interface ResultsDisplayProps {
-  status: DetectionStatus;
+  prediction: 'normal' | 'pneumonia';
   confidence: number;
   processingTime: number;
-  modelVersion: string;
-  notes?: string;
+  fileName: string;
 }
 
 export function ResultsDisplay({
-  status,
+  prediction,
   confidence,
   processingTime,
-  modelVersion,
-  notes,
+  fileName,
 }: ResultsDisplayProps) {
   const getStatusConfig = () => {
-    switch (status) {
-      case 'positive':
-        return {
-          icon: AlertTriangle,
-          color: 'red',
-          bgColor: 'bg-red-50',
-          borderColor: 'border-red-200',
-          iconColor: 'text-red-600',
-          textColor: 'text-red-900',
-          title: 'Pneumonia Detected',
-          description: 'Abnormalities consistent with pneumonia have been identified.',
-        };
-      case 'negative':
-        return {
-          icon: CheckCircle,
-          color: 'green',
-          bgColor: 'bg-green-50',
-          borderColor: 'border-green-200',
-          iconColor: 'text-green-600',
-          textColor: 'text-green-900',
-          title: 'No Pneumonia Detected',
-          description: 'No significant abnormalities detected in the X-ray.',
-        };
-      case 'inconclusive':
-        return {
-          icon: HelpCircle,
-          color: 'yellow',
-          bgColor: 'bg-yellow-50',
-          borderColor: 'border-yellow-200',
-          iconColor: 'text-yellow-600',
-          textColor: 'text-yellow-900',
-          title: 'Inconclusive Results',
-          description: 'Analysis could not determine a definitive result.',
-        };
+    if (prediction === 'pneumonia') {
+      return {
+        icon: AlertTriangle,
+        bgColor: 'bg-red-50',
+        borderColor: 'border-red-200',
+        iconColor: 'text-red-600',
+        textColor: 'text-red-900',
+        title: 'Pneumonia Detected',
+        description: 'The AI model has identified patterns consistent with pneumonia in this X-ray image.',
+      };
+    } else {
+      return {
+        icon: CheckCircle,
+        bgColor: 'bg-green-50',
+        borderColor: 'border-green-200',
+        iconColor: 'text-green-600',
+        textColor: 'text-green-900',
+        title: 'Normal X-Ray',
+        description: 'No significant abnormalities consistent with pneumonia were detected.',
+      };
     }
   };
 
@@ -58,10 +41,13 @@ export function ResultsDisplay({
   const Icon = config.icon;
 
   const getConfidenceColor = () => {
-    if (confidence >= 80) return 'bg-green-500';
-    if (confidence >= 60) return 'bg-yellow-500';
+    const confidencePercent = confidence * 100;
+    if (confidencePercent >= 80) return 'bg-green-500';
+    if (confidencePercent >= 60) return 'bg-yellow-500';
     return 'bg-red-500';
   };
+
+  const confidencePercent = confidence * 100;
 
   return (
     <div className="bg-white rounded-xl shadow-lg overflow-hidden">
@@ -88,32 +74,31 @@ export function ResultsDisplay({
               Confidence Score
             </span>
             <span className="text-lg font-bold text-gray-900">
-              {confidence.toFixed(1)}%
+              {confidencePercent.toFixed(1)}%
             </span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
             <div
               className={`h-full ${getConfidenceColor()} transition-all duration-500 ease-out`}
-              style={{ width: `${confidence}%` }}
+              style={{ width: `${confidencePercent}%` }}
             />
           </div>
           <p className="text-xs text-gray-500 mt-2">
-            {confidence >= 80 && 'High confidence in the analysis'}
-            {confidence >= 60 && confidence < 80 && 'Moderate confidence in the analysis'}
-            {confidence < 60 && 'Lower confidence - consider additional imaging'}
+            {confidencePercent >= 80 && 'High confidence in the analysis'}
+            {confidencePercent >= 60 && confidencePercent < 80 && 'Moderate confidence in the analysis'}
+            {confidencePercent < 60 && 'Lower confidence - consider additional imaging'}
           </p>
         </div>
 
-        {notes && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h3 className="text-sm font-semibold text-blue-900 mb-2">
-              Analysis Notes
-            </h3>
-            <p className="text-sm text-blue-800 leading-relaxed">
-              {notes}
-            </p>
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-blue-900 mb-2">
+            File Information
+          </h3>
+          <div className="flex items-center gap-2 text-sm text-blue-800">
+            <FileText className="w-4 h-4" />
+            <span className="truncate">{fileName}</span>
           </div>
-        )}
+        </div>
 
         <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-200">
           <div className="flex items-center gap-3">
@@ -123,18 +108,7 @@ export function ResultsDisplay({
             <div>
               <p className="text-xs text-gray-500">Processing Time</p>
               <p className="text-sm font-semibold text-gray-900">
-                {(processingTime / 1000).toFixed(2)}s
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <Cpu className="w-5 h-5 text-gray-600" />
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">Model Version</p>
-              <p className="text-sm font-semibold text-gray-900">
-                {modelVersion}
+                {processingTime}ms
               </p>
             </div>
           </div>
